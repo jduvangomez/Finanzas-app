@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { TIPOS_POR_PROYECTO } from '@/lib/tiposPorProyecto';
+import Nav from '@/app/components/Nav';
 
 export default function MovimientoPage() {
   const router = useRouter();
@@ -400,6 +401,8 @@ export default function MovimientoPage() {
           </button>
         )}
       </form>
+
+      <Nav />
     </main>
   );
 }
