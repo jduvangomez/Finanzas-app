@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/app/components/Nav';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -158,14 +159,16 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3 mb-6">
-            <div className="bg-white rounded-xl p-4 shadow-sm">
+            <Link href="/capital" className="bg-white rounded-xl p-4 shadow-sm block">
               <p className="text-xs text-gray-500">Capital total</p>
               <p className="text-lg font-semibold text-blue-600">{formatoCOP.format(totalCapital)}</p>
-            </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm">
+              <p className="text-[10px] text-gray-400 mt-1">Ver detalle →</p>
+            </Link>
+            <Link href="/deuda" className="bg-white rounded-xl p-4 shadow-sm block">
               <p className="text-xs text-gray-500">Deuda total</p>
               <p className="text-lg font-semibold text-orange-600">{formatoCOP.format(totalDeuda)}</p>
-            </div>
+              <p className="text-[10px] text-gray-400 mt-1">Ver detalle →</p>
+            </Link>
           </div>
 
           {presupuesto.length > 0 && (
