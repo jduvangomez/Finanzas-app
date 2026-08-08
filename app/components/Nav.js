@@ -10,6 +10,7 @@ export default function Nav() {
 
   const links = [
     { href: '/movimiento', label: 'Registrar' },
+    { href: '/historial', label: 'Historial' },
     { href: '/dashboard', label: 'Dashboard' },
     { href: '/reportes', label: 'Reportes' },
   ];
