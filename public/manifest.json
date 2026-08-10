@@ -2,7 +2,7 @@
   "name": "Finanzas Personales",
   "short_name": "Finanzas",
   "description": "App de finanzas personales — Personal y Hogar",
-  "start_url": "/movimiento",
+  "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#f9fafb",
   "theme_color": "#2563eb",
