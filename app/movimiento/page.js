@@ -9,6 +9,36 @@ import Nav from '@/app/components/Nav';
 export default function MovimientoPage() {
   const router = useRouter();
 
+  async function obtenerConteoUso(columna, filtros) {
+    let query = supabase
+      .from('movimientos')
+      .select(columna)
+      .not(columna, 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    Object.entries(filtros).forEach(([col, val]) => {
+      query = query.eq(col, val);
+    });
+
+    const { data } = await query;
+    const conteo = {};
+    (data || []).forEach((row) => {
+      const val = row[columna];
+      conteo[val] = (conteo[val] || 0) + 1;
+    });
+    return conteo;
+  }
+
+  function ordenarPorUso(lista, conteo) {
+    return [...lista].sort((a, b) => {
+      const usoA = conteo[a.id] || 0;
+      const usoB = conteo[b.id] || 0;
+      if (usoB !== usoA) return usoB - usoA;
+      return a.nombre.localeCompare(b.nombre);
+    });
+  }
+
   const [cargandoSesion, setCargandoSesion] = useState(true);
   const [proyectos, setProyectos] = useState([]);
   const [cuentas, setCuentas] = useState([]);
@@ -93,7 +123,11 @@ export default function MovimientoPage() {
       .eq('tipo', tipo)
       .eq('activa', true)
       .order('nombre')
-      .then(({ data }) => setCategorias(data || []));
+      .then(async ({ data }) => {
+        const lista = data || [];
+        const conteo = await obtenerConteoUso('categoria_id', { proyecto_id: proyectoId, tipo });
+        setCategorias(ordenarPorUso(lista, conteo));
+      });
   }, [proyectoId, tipo]);
 
   useEffect(() => {
@@ -108,7 +142,11 @@ export default function MovimientoPage() {
       .select('id, nombre')
       .eq('categoria_id', categoriaId)
       .order('nombre')
-      .then(({ data }) => setSubcategorias(data || []));
+      .then(async ({ data }) => {
+        const lista = data || [];
+        const conteo = await obtenerConteoUso('subcategoria_id', { categoria_id: categoriaId });
+        setSubcategorias(ordenarPorUso(lista, conteo));
+      });
   }, [categoriaId]);
 
   useEffect(() => {
@@ -122,7 +160,11 @@ export default function MovimientoPage() {
       .select('id, nombre')
       .eq('subcategoria_id', subcategoriaId)
       .order('nombre')
-      .then(({ data }) => setEtiquetas(data || []));
+      .then(async ({ data }) => {
+        const lista = data || [];
+        const conteo = await obtenerConteoUso('etiqueta_id', { subcategoria_id: subcategoriaId });
+        setEtiquetas(ordenarPorUso(lista, conteo));
+      });
   }, [subcategoriaId]);
 
   function limpiarFormularioParaSiguiente() {
@@ -236,6 +278,24 @@ export default function MovimientoPage() {
           <>
             <div>
               <label className="block text-sm text-gray-600 mb-1">Categoría</label>
+              {categorias.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {categorias.slice(0, 3).map((c) => (
+                    <button
+                      type="button"
+                      key={c.id}
+                      onClick={() => setCategoriaId(c.id)}
+                      className={`text-xs px-3 py-1.5 rounded-full border ${
+                        categoriaId === c.id
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
+                    >
+                      {c.nombre}
+                    </button>
+                  ))}
+                </div>
+              )}
               <select
                 value={categoriaId}
                 onChange={(e) => setCategoriaId(e.target.value)}
@@ -254,6 +314,22 @@ export default function MovimientoPage() {
             {subcategorias.length > 0 && (
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Subcategoría</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {subcategorias.slice(0, 3).map((s) => (
+                    <button
+                      type="button"
+                      key={s.id}
+                      onClick={() => setSubcategoriaId(s.id)}
+                      className={`text-xs px-3 py-1.5 rounded-full border ${
+                        subcategoriaId === s.id
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
+                    >
+                      {s.nombre}
+                    </button>
+                  ))}
+                </div>
                 <select
                   value={subcategoriaId}
                   onChange={(e) => setSubcategoriaId(e.target.value)}
@@ -272,6 +348,22 @@ export default function MovimientoPage() {
             {etiquetas.length > 0 && (
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Etiqueta</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {etiquetas.slice(0, 3).map((et) => (
+                    <button
+                      type="button"
+                      key={et.id}
+                      onClick={() => setEtiquetaId(et.id)}
+                      className={`text-xs px-3 py-1.5 rounded-full border ${
+                        etiquetaId === et.id
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
+                    >
+                      {et.nombre}
+                    </button>
+                  ))}
+                </div>
                 <select
                   value={etiquetaId}
                   onChange={(e) => setEtiquetaId(e.target.value)}
