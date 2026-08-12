@@ -33,6 +33,9 @@ export default function ReportesPage() {
   const [historico, setHistorico] = useState([]);
   const [cargandoDatos, setCargandoDatos] = useState(false);
 
+  const [analisisObjetivos, setAnalisisObjetivos] = useState([]);
+  const [cargandoAnalisis, setCargandoAnalisis] = useState(false);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) router.replace('/login');
@@ -59,11 +62,21 @@ export default function ReportesPage() {
 
   useEffect(() => {
     if (cargandoSesion) return;
+    cargarAnalisisObjetivos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cargandoSesion, vista, proyectos.length]);
+
+  useEffect(() => {
+    if (cargandoSesion) return;
 
     const canal = supabase
       .channel('reportes-movimientos')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'movimientos' }, () => {
         cargarDatos();
+        cargarAnalisisObjetivos();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'objetivos' }, () => {
+        cargarAnalisisObjetivos();
       })
       .subscribe();
 
@@ -129,6 +142,110 @@ export default function ReportesPage() {
     setCargandoDatos(false);
   }
 
+  async function cargarAnalisisObjetivos() {
+    setCargandoAnalisis(true);
+
+    let query = supabase
+      .from('objetivos')
+      .select('*, categorias(nombre), subcategorias(nombre)')
+      .eq('activo', true);
+    if (proyectoId) query = query.eq('proyecto_id', proyectoId);
+
+    const { data } = await query;
+    const resultados = [];
+
+    for (const o of data || []) {
+      resultados.push(await calcularAnalisisObjetivo(o));
+    }
+
+    setAnalisisObjetivos(resultados);
+    setCargandoAnalisis(false);
+  }
+
+  async function calcularAnalisisObjetivo(o) {
+    if (o.tipo === 'Limite_Gasto') {
+      const hoyLocal = new Date();
+      let rango;
+      if (o.periodo === 'Quincenal') {
+        const q = hoyLocal.getDate() <= 15 ? 1 : 2;
+        rango = rangoQuincena(hoyLocal.getFullYear(), hoyLocal.getMonth() + 1, q);
+      } else {
+        rango = rangoMes(hoyLocal.getFullYear(), hoyLocal.getMonth() + 1);
+      }
+
+      let q2 = supabase
+        .from('movimientos')
+        .select('valor')
+        .eq('tipo', 'Gasto')
+        .eq('proyecto_id', o.proyecto_id)
+        .eq('categoria_id', o.categoria_id)
+        .gte('fecha', rango.inicio)
+        .lte('fecha', rango.fin);
+      if (o.subcategoria_id) q2 = q2.eq('subcategoria_id', o.subcategoria_id);
+
+      const { data } = await q2;
+      const gastado = (data || []).reduce((acc, r) => acc + Number(r.valor), 0);
+      const pct = o.monto_objetivo > 0 ? (gastado / o.monto_objetivo) * 100 : 0;
+      const cumplido = gastado <= o.monto_objetivo;
+      const nombrePeriodo = o.periodo === 'Quincenal' ? 'esta quincena' : 'este mes';
+
+      return {
+        ...o,
+        pct: Math.min(pct, 999),
+        cumplido,
+        texto: cumplido
+          ? `Vas bien: llevas ${formatoCOP.format(gastado)} de ${formatoCOP.format(
+              o.monto_objetivo
+            )} (${pct.toFixed(0)}%) en ${nombrePeriodo}.`
+          : `Te pasaste por ${formatoCOP.format(gastado - o.monto_objetivo)} (${pct.toFixed(
+              0
+            )}% del límite) en ${nombrePeriodo}.`,
+      };
+    }
+
+    if (o.tipo === 'Reduccion_Deuda') {
+      let q2 = supabase
+        .from('v_saldo_deuda')
+        .select('saldo')
+        .eq('proyecto_id', o.proyecto_id)
+        .eq('categoria', o.categorias?.nombre);
+      if (o.subcategorias?.nombre) q2 = q2.eq('subcategoria', o.subcategorias.nombre);
+
+      const { data } = await q2;
+      const saldoActual = (data || []).reduce((acc, r) => acc + Number(r.saldo), 0);
+
+      const totalPorReducir = (o.saldo_inicial || 0) - o.monto_objetivo;
+      const reducidoHasta = (o.saldo_inicial || 0) - saldoActual;
+      const pct = totalPorReducir > 0 ? Math.max(0, Math.min(100, (reducidoHasta / totalPorReducir) * 100)) : 100;
+
+      let proyeccion = '';
+      if (o.fecha_limite) {
+        const diasTranscurridos = Math.max(
+          1,
+          (Date.now() - new Date(o.created_at).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        const diasRestantes = (new Date(o.fecha_limite).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+        const ritmoDiario = reducidoHasta / diasTranscurridos;
+        const proyectadoAFecha = reducidoHasta + ritmoDiario * Math.max(0, diasRestantes);
+        proyeccion =
+          proyectadoAFecha >= totalPorReducir
+            ? ' A este ritmo, llegas a la meta a tiempo.'
+            : ' A este ritmo, no vas a llegar antes de la fecha límite.';
+      }
+
+      return {
+        ...o,
+        saldoActual,
+        pct,
+        texto: `Vas al ${pct.toFixed(0)}% de tu meta. Saldo actual: ${formatoCOP.format(
+          saldoActual
+        )}, meta: ${formatoCOP.format(o.monto_objetivo)}.${proyeccion}`,
+      };
+    }
+
+    return o;
+  }
+
   function exportarPDF() {
     const doc = new jsPDF();
     const titulo = `Reporte ${vista} — ${etiquetaPeriodo(año, mes, tipoPeriodo === 'Mensual' ? null : quincena)}`;
@@ -181,6 +298,32 @@ export default function ReportesPage() {
           </button>
         ))}
       </div>
+
+      {!cargandoAnalisis && analisisObjetivos.length > 0 && (
+        <>
+          <h2 className="text-sm font-medium text-gray-600 mb-2">Cómo vas con tus objetivos</h2>
+          <div className="space-y-2 mb-6">
+            {analisisObjetivos.map((o) => (
+              <div key={o.id} className="bg-white rounded-xl p-3 shadow-sm">
+                <p className="text-sm font-medium">{o.nombre}</p>
+                <p className="text-xs text-gray-500 mt-1">{o.texto}</p>
+                <div className="w-full bg-gray-100 rounded-full h-2 mt-2">
+                  <div
+                    className={`h-2 rounded-full ${
+                      o.tipo === 'Limite_Gasto'
+                        ? o.cumplido
+                          ? 'bg-green-500'
+                          : 'bg-red-500'
+                        : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${Math.min(100, o.pct)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="flex gap-2 mb-4">
         {['Mensual', 'Quincenal'].map((t) => (
