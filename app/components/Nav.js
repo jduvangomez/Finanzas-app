@@ -12,6 +12,7 @@ export default function Nav() {
     { href: '/historial', label: 'Historial' },
     { href: '/dashboard', label: 'Dashboard' },
     { href: '/reportes', label: 'Reportes' },
+    { href: '/objetivos', label: 'Objetivos' },
   ];
 
   async function salir() {
@@ -31,19 +32,19 @@ export default function Nav() {
         </Link>
       )}
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around items-center py-2 max-w-md mx-auto">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around items-center py-2 max-w-md mx-auto overflow-x-auto">
         {links.map((l) => (
           <Link
             key={l.href}
             href={l.href}
-            className={`text-sm px-3 py-2 rounded-lg ${
+            className={`text-xs px-2 py-2 rounded-lg whitespace-nowrap ${
               pathname === l.href ? 'text-blue-600 font-medium' : 'text-gray-500'
             }`}
           >
             {l.label}
           </Link>
         ))}
-        <button onClick={salir} className="text-sm px-3 py-2 text-gray-400">
+        <button onClick={salir} className="text-xs px-2 py-2 text-gray-400 whitespace-nowrap">
           Salir
         </button>
       </nav>
