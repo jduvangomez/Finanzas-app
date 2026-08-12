@@ -37,6 +37,8 @@ export default function HistorialPage() {
   const [movimientos, setMovimientos] = useState([]);
   const [mapaCuentas, setMapaCuentas] = useState({});
   const [cargando, setCargando] = useState(false);
+  const [filtroTipo, setFiltroTipo] = useState('Todos');
+  const [busqueda, setBusqueda] = useState('');
 
   const [editandoId, setEditandoId] = useState(null);
   const [formEdit, setFormEdit] = useState({ valor: '', fecha: '', descripcion: '', observaciones: '' });
@@ -76,7 +78,7 @@ export default function HistorialPage() {
     if (cargandoSesion) return;
     cargarMovimientos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargandoSesion, vista, proyectos.length]);
+  }, [cargandoSesion, vista, proyectos.length, filtroTipo]);
 
   useEffect(() => {
     if (cargandoSesion) return;
@@ -88,7 +90,7 @@ export default function HistorialPage() {
       .subscribe();
     return () => supabase.removeChannel(canal);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargandoSesion, vista, proyectos.length]);
+  }, [cargandoSesion, vista, proyectos.length, filtroTipo]);
 
   async function cargarMovimientos() {
     setCargando(true);
@@ -100,14 +102,25 @@ export default function HistorialPage() {
       )
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(100);
+      .limit(300);
 
     if (proyectoId) query = query.eq('proyecto_id', proyectoId);
+    if (filtroTipo !== 'Todos') query = query.eq('tipo', filtroTipo);
 
     const { data, error } = await query;
     if (!error) setMovimientos(data || []);
     setCargando(false);
   }
+
+  const movimientosFiltrados = movimientos.filter((m) => {
+    if (!busqueda.trim()) return true;
+    const texto = busqueda.trim().toLowerCase();
+    return (
+      m.descripcion?.toLowerCase().includes(texto) ||
+      m.categorias?.nombre?.toLowerCase().includes(texto) ||
+      m.subcategorias?.nombre?.toLowerCase().includes(texto)
+    );
+  });
 
   function esEditable(m) {
     if (m.origen !== 'Manual') return false;
@@ -207,13 +220,34 @@ export default function HistorialPage() {
         ))}
       </div>
 
+      <div className="flex gap-2 mb-4">
+        <select
+          value={filtroTipo}
+          onChange={(e) => setFiltroTipo(e.target.value)}
+          className="border rounded-lg px-2 py-2 bg-white text-sm"
+        >
+          {['Todos', 'Ingreso', 'Gasto', 'Capital', 'Deuda', 'Transferencia'].map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar por descripción o categoría..."
+          className="flex-1 border rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
       {cargando ? (
         <p className="text-gray-400 text-sm">Cargando...</p>
       ) : (
         <div className="space-y-2">
-          {movimientos.length === 0 && <p className="text-sm text-gray-400">Sin movimientos.</p>}
+          {movimientosFiltrados.length === 0 && <p className="text-sm text-gray-400">Sin movimientos.</p>}
 
-          {movimientos.map((m) => (
+          {movimientosFiltrados.map((m) => (
             <div key={m.id} className="bg-white rounded-xl p-3 shadow-sm">
               {editandoId === m.id ? (
                 <div className="space-y-2">
