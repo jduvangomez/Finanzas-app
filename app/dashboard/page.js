@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/app/components/Nav';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { rangoMes } from '@/lib/periodos';
 
 const formatoCOP = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -25,6 +26,10 @@ export default function DashboardPage() {
   const [presupuesto, setPresupuesto] = useState([]);
   const [gastoPorCategoria, setGastoPorCategoria] = useState([]);
   const [cargandoDatos, setCargandoDatos] = useState(false);
+
+  const hoy = new Date();
+  const [mes, setMes] = useState(hoy.getMonth() + 1);
+  const [año, setAño] = useState(hoy.getFullYear());
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -48,7 +53,7 @@ export default function DashboardPage() {
     if (cargandoSesion) return;
     cargarDatos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargandoSesion, vista, proyectos.length]);
+  }, [cargandoSesion, vista, proyectos.length, mes, año]);
 
   useEffect(() => {
     if (cargandoSesion) return;
@@ -64,7 +69,7 @@ export default function DashboardPage() {
       supabase.removeChannel(canal);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargandoSesion, vista, proyectos.length]);
+  }, [cargandoSesion, vista, proyectos.length, mes, año]);
 
   async function cargarDatos() {
     setCargandoDatos(true);
@@ -82,21 +87,46 @@ export default function DashboardPage() {
     const { data: deuda } = await qDeuda;
     setSaldoDeuda(deuda || []);
 
-    let qPresupuesto = supabase.from('v_presupuesto_consumido').select('*');
-    if (proyectoId) qPresupuesto = qPresupuesto.eq('proyecto_id', proyectoId);
-    const { data: presu } = await qPresupuesto;
-    setPresupuesto(presu || []);
+    const rango = rangoMes(año, mes);
 
-    const hoy = new Date();
-    const primerDia = new Date(Date.UTC(hoy.getFullYear(), hoy.getMonth(), 1)).toISOString().slice(0, 10);
-    const ultimoDia = new Date(Date.UTC(hoy.getFullYear(), hoy.getMonth() + 1, 0)).toISOString().slice(0, 10);
+    // Presupuesto: se calcula del lado del cliente para el mes/año seleccionado
+    // (no usamos v_presupuesto_consumido porque esa vista siempre mira el mes actual del calendario)
+    let qCategoriasPresupuesto = supabase
+      .from('categorias')
+      .select('id, proyecto_id, nombre, presupuesto')
+      .not('presupuesto', 'is', null);
+    if (proyectoId) qCategoriasPresupuesto = qCategoriasPresupuesto.eq('proyecto_id', proyectoId);
+    const { data: categoriasPresupuesto } = await qCategoriasPresupuesto;
+
+    let qGastoPresupuesto = supabase
+      .from('movimientos')
+      .select('valor, categoria_id')
+      .eq('tipo', 'Gasto')
+      .gte('fecha', rango.inicio)
+      .lte('fecha', rango.fin);
+    if (proyectoId) qGastoPresupuesto = qGastoPresupuesto.eq('proyecto_id', proyectoId);
+    const { data: gastoPresupuesto } = await qGastoPresupuesto;
+
+    const gastadoPorCategoria = {};
+    (gastoPresupuesto || []).forEach((row) => {
+      gastadoPorCategoria[row.categoria_id] = (gastadoPorCategoria[row.categoria_id] || 0) + Number(row.valor);
+    });
+
+    setPresupuesto(
+      (categoriasPresupuesto || []).map((c) => ({
+        categoria_id: c.id,
+        nombre: c.nombre,
+        presupuesto: Number(c.presupuesto),
+        gastado: gastadoPorCategoria[c.id] || 0,
+      }))
+    );
 
     let qGasto = supabase
       .from('movimientos')
       .select('valor, categorias(nombre)')
       .eq('tipo', 'Gasto')
-      .gte('fecha', primerDia)
-      .lte('fecha', ultimoDia);
+      .gte('fecha', rango.inicio)
+      .lte('fecha', rango.fin);
     if (proyectoId) qGasto = qGasto.eq('proyecto_id', proyectoId);
     const { data: gastos } = await qGasto;
 
@@ -129,7 +159,7 @@ export default function DashboardPage() {
     <main className="min-h-screen p-4 max-w-md mx-auto pb-24">
       <h1 className="text-xl font-semibold mb-4">Dashboard</h1>
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-4">
         {['General', 'Personal', 'Hogar'].map((v) => (
           <button
             key={v}
@@ -141,6 +171,35 @@ export default function DashboardPage() {
             {v}
           </button>
         ))}
+      </div>
+
+      <div className="flex gap-2 mb-6">
+        <select
+          value={mes}
+          onChange={(e) => setMes(Number(e.target.value))}
+          className="border rounded-lg px-2 py-2 bg-white text-sm"
+        >
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          value={año}
+          onChange={(e) => setAño(Number(e.target.value))}
+          className="border rounded-lg px-2 py-2 text-sm w-24"
+        />
+        <button
+          onClick={() => {
+            setMes(hoy.getMonth() + 1);
+            setAño(hoy.getFullYear());
+          }}
+          className="text-xs text-blue-600 px-2"
+        >
+          Hoy
+        </button>
       </div>
 
       {cargandoDatos ? (
@@ -173,7 +232,7 @@ export default function DashboardPage() {
 
           {presupuesto.length > 0 && (
             <>
-              <h2 className="text-sm font-medium text-gray-600 mb-2">Presupuesto del mes</h2>
+              <h2 className="text-sm font-medium text-gray-600 mb-2">Presupuesto del periodo</h2>
               <div className="bg-white rounded-xl p-3 shadow-sm mb-6 space-y-3">
                 {presupuesto.map((p) => {
                   const pct = p.presupuesto > 0 ? Math.min(100, (p.gastado / p.presupuesto) * 100) : 0;
@@ -198,7 +257,7 @@ export default function DashboardPage() {
             </>
           )}
 
-          <h2 className="text-sm font-medium text-gray-600 mb-2">Gasto por categoría (este mes)</h2>
+          <h2 className="text-sm font-medium text-gray-600 mb-2">Gasto por categoría (periodo seleccionado)</h2>
           <div className="bg-white rounded-xl p-3 shadow-sm mb-6" style={{ height: 220 }}>
             {gastoPorCategoria.length === 0 ? (
               <p className="text-sm text-gray-400">Sin gastos este mes.</p>
