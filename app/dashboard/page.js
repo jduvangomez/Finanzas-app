@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/app/components/Nav';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { rangoMes } from '@/lib/periodos';
+import { rangoMes, rangoTrimestre, rangoSemestre, rangoAnio } from '@/lib/periodos';
 
 const formatoCOP = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -30,6 +30,9 @@ export default function DashboardPage() {
   const hoy = new Date();
   const [mes, setMes] = useState(hoy.getMonth() + 1);
   const [año, setAño] = useState(hoy.getFullYear());
+  const [tipoPeriodo, setTipoPeriodo] = useState('Mensual');
+  const [trimestre, setTrimestre] = useState(Math.floor(hoy.getMonth() / 3) + 1);
+  const [semestre, setSemestre] = useState(hoy.getMonth() < 6 ? 1 : 2);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -53,7 +56,7 @@ export default function DashboardPage() {
     if (cargandoSesion) return;
     cargarDatos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargandoSesion, vista, proyectos.length, mes, año]);
+  }, [cargandoSesion, vista, proyectos.length, mes, año, tipoPeriodo, trimestre, semestre]);
 
   useEffect(() => {
     if (cargandoSesion) return;
@@ -69,7 +72,7 @@ export default function DashboardPage() {
       supabase.removeChannel(canal);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cargandoSesion, vista, proyectos.length, mes, año]);
+  }, [cargandoSesion, vista, proyectos.length, mes, año, tipoPeriodo, trimestre, semestre]);
 
   async function cargarDatos() {
     setCargandoDatos(true);
@@ -87,46 +90,55 @@ export default function DashboardPage() {
     const { data: deuda } = await qDeuda;
     setSaldoDeuda(deuda || []);
 
-    const rango = rangoMes(año, mes);
+    const rango =
+      tipoPeriodo === 'Mensual'
+        ? rangoMes(año, mes)
+        : tipoPeriodo === 'Trimestral'
+        ? rangoTrimestre(año, trimestre)
+        : tipoPeriodo === 'Semestral'
+        ? rangoSemestre(año, semestre)
+        : tipoPeriodo === 'Anual'
+        ? rangoAnio(año)
+        : null; // General: sin filtro de fecha
 
-    // Presupuesto: se calcula del lado del cliente para el mes/año seleccionado
-    // (no usamos v_presupuesto_consumido porque esa vista siempre mira el mes actual del calendario)
-    let qCategoriasPresupuesto = supabase
-      .from('categorias')
-      .select('id, proyecto_id, nombre, presupuesto')
-      .not('presupuesto', 'is', null);
-    if (proyectoId) qCategoriasPresupuesto = qCategoriasPresupuesto.eq('proyecto_id', proyectoId);
-    const { data: categoriasPresupuesto } = await qCategoriasPresupuesto;
+    // Presupuesto: solo tiene sentido comparar contra un mes (el presupuesto se define mensual).
+    // En Trimestral/Semestral/Anual/General no se muestra, para no comparar cifras que no son compatibles.
+    if (tipoPeriodo === 'Mensual') {
+      let qCategoriasPresupuesto = supabase
+        .from('categorias')
+        .select('id, proyecto_id, nombre, presupuesto')
+        .not('presupuesto', 'is', null);
+      if (proyectoId) qCategoriasPresupuesto = qCategoriasPresupuesto.eq('proyecto_id', proyectoId);
+      const { data: categoriasPresupuesto } = await qCategoriasPresupuesto;
 
-    let qGastoPresupuesto = supabase
-      .from('movimientos')
-      .select('valor, categoria_id')
-      .eq('tipo', 'Gasto')
-      .gte('fecha', rango.inicio)
-      .lte('fecha', rango.fin);
-    if (proyectoId) qGastoPresupuesto = qGastoPresupuesto.eq('proyecto_id', proyectoId);
-    const { data: gastoPresupuesto } = await qGastoPresupuesto;
+      let qGastoPresupuesto = supabase
+        .from('movimientos')
+        .select('valor, categoria_id')
+        .eq('tipo', 'Gasto')
+        .gte('fecha', rango.inicio)
+        .lte('fecha', rango.fin);
+      if (proyectoId) qGastoPresupuesto = qGastoPresupuesto.eq('proyecto_id', proyectoId);
+      const { data: gastoPresupuesto } = await qGastoPresupuesto;
 
-    const gastadoPorCategoria = {};
-    (gastoPresupuesto || []).forEach((row) => {
-      gastadoPorCategoria[row.categoria_id] = (gastadoPorCategoria[row.categoria_id] || 0) + Number(row.valor);
-    });
+      const gastadoPorCategoria = {};
+      (gastoPresupuesto || []).forEach((row) => {
+        gastadoPorCategoria[row.categoria_id] = (gastadoPorCategoria[row.categoria_id] || 0) + Number(row.valor);
+      });
 
-    setPresupuesto(
-      (categoriasPresupuesto || []).map((c) => ({
-        categoria_id: c.id,
-        nombre: c.nombre,
-        presupuesto: Number(c.presupuesto),
-        gastado: gastadoPorCategoria[c.id] || 0,
-      }))
-    );
+      setPresupuesto(
+        (categoriasPresupuesto || []).map((c) => ({
+          categoria_id: c.id,
+          nombre: c.nombre,
+          presupuesto: Number(c.presupuesto),
+          gastado: gastadoPorCategoria[c.id] || 0,
+        }))
+      );
+    } else {
+      setPresupuesto([]);
+    }
 
-    let qGasto = supabase
-      .from('movimientos')
-      .select('valor, categorias(nombre)')
-      .eq('tipo', 'Gasto')
-      .gte('fecha', rango.inicio)
-      .lte('fecha', rango.fin);
+    let qGasto = supabase.from('movimientos').select('valor, categorias(nombre)').eq('tipo', 'Gasto');
+    if (rango) qGasto = qGasto.gte('fecha', rango.inicio).lte('fecha', rango.fin);
     if (proyectoId) qGasto = qGasto.eq('proyecto_id', proyectoId);
     const { data: gastos } = await qGasto;
 
@@ -173,34 +185,86 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-2">
         <select
-          value={mes}
-          onChange={(e) => setMes(Number(e.target.value))}
-          className="border rounded-lg px-2 py-2 bg-white text-sm"
+          value={tipoPeriodo}
+          onChange={(e) => setTipoPeriodo(e.target.value)}
+          className="flex-1 border rounded-lg px-2 py-2 bg-white text-sm"
         >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
+          <option value="Mensual">Mensual</option>
+          <option value="Trimestral">Trimestral</option>
+          <option value="Semestral">Semestral</option>
+          <option value="Anual">Anual</option>
+          <option value="General">General (todo)</option>
         </select>
-        <input
-          type="number"
-          value={año}
-          onChange={(e) => setAño(Number(e.target.value))}
-          className="border rounded-lg px-2 py-2 text-sm w-24"
-        />
-        <button
-          onClick={() => {
-            setMes(hoy.getMonth() + 1);
-            setAño(hoy.getFullYear());
-          }}
-          className="text-xs text-blue-600 px-2"
-        >
-          Hoy
-        </button>
+        {tipoPeriodo !== 'General' && (
+          <input
+            type="number"
+            value={año}
+            onChange={(e) => setAño(Number(e.target.value))}
+            className="border rounded-lg px-2 py-2 text-sm w-24"
+          />
+        )}
       </div>
+
+      {tipoPeriodo === 'Mensual' && (
+        <div className="flex gap-2 mb-6">
+          <select
+            value={mes}
+            onChange={(e) => setMes(Number(e.target.value))}
+            className="flex-1 border rounded-lg px-2 py-2 bg-white text-sm"
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => {
+              setMes(hoy.getMonth() + 1);
+              setAño(hoy.getFullYear());
+            }}
+            className="text-xs text-blue-600 px-2"
+          >
+            Hoy
+          </button>
+        </div>
+      )}
+
+      {tipoPeriodo === 'Trimestral' && (
+        <div className="flex gap-2 mb-6">
+          {[1, 2, 3, 4].map((t) => (
+            <button
+              key={t}
+              onClick={() => setTrimestre(t)}
+              className={`flex-1 rounded-lg py-2 text-sm font-medium border ${
+                trimestre === t ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-700 border-gray-300'
+              }`}
+            >
+              T{t}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tipoPeriodo === 'Semestral' && (
+        <div className="flex gap-2 mb-6">
+          {[1, 2].map((s) => (
+            <button
+              key={s}
+              onClick={() => setSemestre(s)}
+              className={`flex-1 rounded-lg py-2 text-sm font-medium border ${
+                semestre === s ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-700 border-gray-300'
+              }`}
+            >
+              Semestre {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {(tipoPeriodo === 'Anual' || tipoPeriodo === 'General') && <div className="mb-6" />}
 
       {cargandoDatos ? (
         <p className="text-gray-400 text-sm">Cargando datos...</p>
