@@ -13,6 +13,26 @@ export function rangoMes(año, mes) {
   return { inicio: toISODate(inicio), fin: toISODate(fin) };
 }
 
+export function rangoTrimestre(año, trimestre) {
+  const mesInicio = (trimestre - 1) * 3 + 1;
+  const inicio = new Date(Date.UTC(año, mesInicio - 1, 1));
+  const fin = new Date(Date.UTC(año, mesInicio + 2, 0));
+  return { inicio: toISODate(inicio), fin: toISODate(fin) };
+}
+
+export function rangoSemestre(año, semestre) {
+  const mesInicio = semestre === 1 ? 1 : 7;
+  const inicio = new Date(Date.UTC(año, mesInicio - 1, 1));
+  const fin = new Date(Date.UTC(año, mesInicio + 5, 0));
+  return { inicio: toISODate(inicio), fin: toISODate(fin) };
+}
+
+export function rangoAnio(año) {
+  const inicio = new Date(Date.UTC(año, 0, 1));
+  const fin = new Date(Date.UTC(año, 11, 31));
+  return { inicio: toISODate(inicio), fin: toISODate(fin) };
+}
+
 export function rangoQuincena(año, mes, quincena) {
   if (quincena === 1) {
     const inicio = new Date(Date.UTC(año, mes - 1, 1));
@@ -29,8 +49,6 @@ export function etiquetaPeriodo(año, mes, quincena) {
   return `${quincena === 1 ? '1ra' : '2da'} q. ${NOMBRES_MES[mes - 1].slice(0, 3)} ${año}`;
 }
 
-// Genera una lista de n periodos consecutivos que terminan en (año, mes, quincena), en orden cronológico.
-// quincena = null para periodos mensuales, 1 o 2 para quincenales.
 export function periodosAnteriores(año, mes, quincena, n) {
   const periodos = [];
   let a = año;
