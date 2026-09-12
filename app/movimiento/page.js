@@ -116,18 +116,18 @@ export default function MovimientoPage() {
 
     if (!proyectoId || !tipo || tipo === 'Transferencia') return;
 
-    supabase
-      .from('categorias')
-      .select('id, nombre')
-      .eq('proyecto_id', proyectoId)
-      .eq('tipo', tipo)
-      .eq('activa', true)
-      .order('nombre')
-      .then(async ({ data }) => {
-        const lista = data || [];
-        const conteo = await obtenerConteoUso('categoria_id', { proyecto_id: proyectoId, tipo });
-        setCategorias(ordenarPorUso(lista, conteo));
-      });
+    Promise.all([
+      supabase
+        .from('categorias')
+        .select('id, nombre')
+        .eq('proyecto_id', proyectoId)
+        .eq('tipo', tipo)
+        .eq('activa', true)
+        .order('nombre'),
+      obtenerConteoUso('categoria_id', { proyecto_id: proyectoId, tipo }),
+    ]).then(([{ data }, conteo]) => {
+      setCategorias(ordenarPorUso(data || [], conteo));
+    });
   }, [proyectoId, tipo]);
 
   useEffect(() => {
@@ -137,16 +137,12 @@ export default function MovimientoPage() {
 
     if (!categoriaId) return;
 
-    supabase
-      .from('subcategorias')
-      .select('id, nombre')
-      .eq('categoria_id', categoriaId)
-      .order('nombre')
-      .then(async ({ data }) => {
-        const lista = data || [];
-        const conteo = await obtenerConteoUso('subcategoria_id', { categoria_id: categoriaId });
-        setSubcategorias(ordenarPorUso(lista, conteo));
-      });
+    Promise.all([
+      supabase.from('subcategorias').select('id, nombre').eq('categoria_id', categoriaId).order('nombre'),
+      obtenerConteoUso('subcategoria_id', { categoria_id: categoriaId }),
+    ]).then(([{ data }, conteo]) => {
+      setSubcategorias(ordenarPorUso(data || [], conteo));
+    });
   }, [categoriaId]);
 
   useEffect(() => {
@@ -155,16 +151,12 @@ export default function MovimientoPage() {
 
     if (!subcategoriaId) return;
 
-    supabase
-      .from('etiquetas')
-      .select('id, nombre')
-      .eq('subcategoria_id', subcategoriaId)
-      .order('nombre')
-      .then(async ({ data }) => {
-        const lista = data || [];
-        const conteo = await obtenerConteoUso('etiqueta_id', { subcategoria_id: subcategoriaId });
-        setEtiquetas(ordenarPorUso(lista, conteo));
-      });
+    Promise.all([
+      supabase.from('etiquetas').select('id, nombre').eq('subcategoria_id', subcategoriaId).order('nombre'),
+      obtenerConteoUso('etiqueta_id', { subcategoria_id: subcategoriaId }),
+    ]).then(([{ data }, conteo]) => {
+      setEtiquetas(ordenarPorUso(data || [], conteo));
+    });
   }, [subcategoriaId]);
 
   function limpiarFormularioParaSiguiente() {
