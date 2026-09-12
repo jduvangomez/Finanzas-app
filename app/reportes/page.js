@@ -117,7 +117,22 @@ export default function ReportesPage() {
     setCargandoDatos(true);
 
     const rangoActual = tipoPeriodo === 'Mensual' ? rangoMes(año, mes) : rangoQuincena(año, mes, quincena);
-    const actual = await totalesPeriodo(rangoActual, proyectoId);
+
+    // El total del periodo actual y los 6 periodos históricos son independientes
+    // entre sí, así que se piden todos a la vez con Promise.all en vez de uno por uno.
+    const periodos = periodosAnteriores(año, mes, tipoPeriodo === 'Mensual' ? null : quincena, 6);
+
+    const [actual, ...historicoResultados] = await Promise.all([
+      totalesPeriodo(rangoActual, proyectoId),
+      ...periodos.map((p) => {
+        const rango = tipoPeriodo === 'Mensual' ? rangoMes(p.año, p.mes) : rangoQuincena(p.año, p.mes, p.quincena);
+        return totalesPeriodo(rango, proyectoId).then((t) => ({
+          periodo: etiquetaPeriodo(p.año, p.mes, p.quincena),
+          Ingresos: t.ingresos,
+          Gastos: t.gastos,
+        }));
+      }),
+    ]);
 
     setTotales({ ingresos: actual.ingresos, gastos: actual.gastos });
     setCategorias(
@@ -125,19 +140,7 @@ export default function ReportesPage() {
         .map(([nombre, valor]) => ({ nombre, valor }))
         .sort((a, b) => b.valor - a.valor)
     );
-
-    const periodos = periodosAnteriores(año, mes, tipoPeriodo === 'Mensual' ? null : quincena, 6);
-    const datosHistorico = [];
-    for (const p of periodos) {
-      const rango = tipoPeriodo === 'Mensual' ? rangoMes(p.año, p.mes) : rangoQuincena(p.año, p.mes, p.quincena);
-      const t = await totalesPeriodo(rango, proyectoId);
-      datosHistorico.push({
-        periodo: etiquetaPeriodo(p.año, p.mes, p.quincena),
-        Ingresos: t.ingresos,
-        Gastos: t.gastos,
-      });
-    }
-    setHistorico(datosHistorico);
+    setHistorico(historicoResultados);
 
     setCargandoDatos(false);
   }
@@ -152,11 +155,10 @@ export default function ReportesPage() {
     if (proyectoId) query = query.eq('proyecto_id', proyectoId);
 
     const { data } = await query;
-    const resultados = [];
 
-    for (const o of data || []) {
-      resultados.push(await calcularAnalisisObjetivo(o));
-    }
+    // Cada objetivo se analiza de forma independiente, así que se calculan
+    // todos a la vez en vez de uno por uno.
+    const resultados = await Promise.all((data || []).map((o) => calcularAnalisisObjetivo(o)));
 
     setAnalisisObjetivos(resultados);
     setCargandoAnalisis(false);
@@ -310,11 +312,7 @@ export default function ReportesPage() {
                 <div className="w-full bg-gray-100 rounded-full h-2 mt-2">
                   <div
                     className={`h-2 rounded-full ${
-                      o.tipo === 'Limite_Gasto'
-                        ? o.cumplido
-                          ? 'bg-green-500'
-                          : 'bg-red-500'
-                        : 'bg-blue-500'
+                      o.tipo === 'Limite_Gasto' ? (o.cumplido ? 'bg-green-500' : 'bg-red-500') : 'bg-blue-500'
                     }`}
                     style={{ width: `${Math.min(100, o.pct)}%` }}
                   />
